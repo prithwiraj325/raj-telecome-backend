@@ -125,6 +125,20 @@ app.get('/', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
+// ==========================================
+// नया रूट: एडमिन द्वारा प्रोडक्ट डिलीट करना 🗑️
+// ==========================================
+app.post('/delete-product', async (req, res) => {
+    try {
+        const { id } = req.body;
+        // MongoDB से उस ID वाले प्रोडक्ट को हमेशा के लिए डिलीट करना
+        await Product.findByIdAndDelete(id);
+        res.json({ success: true, message: "Product successfully delete ho gaya!" });
+    } catch (error) {
+        res.json({ success: false, message: "Delete karne mein error aaya." });
+    }
+});
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
+

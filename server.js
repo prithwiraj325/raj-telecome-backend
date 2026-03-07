@@ -4,15 +4,11 @@ const bodyParser = require('body-parser');
 
 const app = express();
 
-// ==========================================
-// सिक्योरिटी पास (CORS) - ब्राउज़र को परमिशन देना
-// ==========================================
+// CORS Pass
 app.use((req, res, next) => {
     res.header("Access-Control-Allow-Origin", "*");
     res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
     res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
-    
-    // अगर ब्राउज़र पहले सिक्योरिटी चेक (OPTIONS) करे, तो उसे पास दे दो
     if (req.method === 'OPTIONS') {
         return res.status(200).end();
     }
@@ -21,14 +17,13 @@ app.use((req, res, next) => {
 
 app.use(bodyParser.json());
 
-// MongoDB से कनेक्ट करना
+// MongoDB Connect
 mongoose.connect(process.env.MONGO_URI, {
     useNewUrlParser: true,
     useUnifiedTopology: true
 }).then(() => console.log("✅ MongoDB Database Connected!"))
   .catch(err => console.log("❌ MongoDB Connection Error:", err));
 
-// ग्राहक का डेटाबेस फॉर्मेट
 const userSchema = new mongoose.Schema({
     name: String,
     phone: String,
@@ -36,7 +31,7 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// Register Route (नया अकाउंट बनाना)
+// Register Route (With Error Tracker)
 app.post('/register', async (req, res) => {
     try {
         const { name, phone, password } = req.body;
@@ -48,11 +43,13 @@ app.post('/register', async (req, res) => {
         await newUser.save();
         res.json({ success: true, message: "Account successfully ban gaya!" });
     } catch (error) {
-        res.json({ success: false, message: "Kuch gadbad hui, dobara try karein." });
+        console.log("Registration Error:", error);
+        // Ab screen par asali error dikhega
+        res.json({ success: false, message: "Asali Error: " + error.message });
     }
 });
 
-// Login Route (अकाउंट में लॉगिन करना)
+// Login Route
 app.post('/login', async (req, res) => {
     try {
         const { phone, password } = req.body;
@@ -63,22 +60,18 @@ app.post('/login', async (req, res) => {
             res.json({ success: false, message: "Mobile number ya password galat hai!" });
         }
     } catch (error) {
-        res.json({ success: false, message: "Server error." });
+        res.json({ success: false, message: "Asali Error: " + error.message });
     }
 });
 
-// Razorpay Webhook
 app.post('/razorpay-webhook', (req, res) => {
-    console.log("Payment Received:", req.body);
     res.status(200).send('ok');
 });
 
-// होम पेज (नया वेलकम मैसेज)
 app.get('/', (req, res) => {
     res.send("🚀 Raj Telecome Backend Server is Running Perfectly!");
 });
 
-// सर्वर चालू करना
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);

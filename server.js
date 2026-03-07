@@ -25,7 +25,7 @@ mongoose.connect(process.env.MONGO_URI, {
   .catch(err => console.log("❌ MongoDB Connection Error:", err));
 
 // ==========================================
-// 1. ग्राहक का डेटाबेस (पुराना वाला)
+// 1. Database Schemas (User & Product)
 // ==========================================
 const userSchema = new mongoose.Schema({
     name: String,
@@ -34,19 +34,19 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// ==========================================
-// 2. नया: प्रोडक्ट्स का डेटाबेस 🛒
-// ==========================================
 const productSchema = new mongoose.Schema({
     name: String,
     price: String,
-    image: String, // यहाँ हम प्रोडक्ट का इमोजी या फोटो का लिंक डालेंगे
-    whatsappMsg: String // WhatsApp पर क्या मैसेज जाएगा
+    image: String,
+    whatsappMsg: String
 });
 const Product = mongoose.model('Product', productSchema);
 
+// ==========================================
+// 2. Authentication Routes
+// ==========================================
 
-// Register Route
+// Register
 app.post('/register', async (req, res) => {
     try {
         const { name, phone, password } = req.body;
@@ -62,13 +62,15 @@ app.post('/register', async (req, res) => {
     }
 });
 
-// Login Route (Admin & User)
+// Login (Admin & User)
 app.post('/login', async (req, res) => {
     try {
         const { phone, password } = req.body;
+        // Admin Login
         if (phone === "7739818651" && password === "Admin@123") {
             return res.json({ success: true, message: "Welcome Boss!", userName: "Admin", isAdmin: true });
         }
+        // Customer Login
         const user = await User.findOne({ phone: phone, password: password });
         if(user) {
             res.json({ success: true, message: "Login Successful!", userName: user.name, isAdmin: false });
@@ -80,6 +82,30 @@ app.post('/login', async (req, res) => {
     }
 });
 
+// Forgot Password / Reset Password
+app.post('/reset-password', async (req, res) => {
+    try {
+        const { phone, name, newPassword } = req.body;
+        // Security Check: Name aur Phone match hona chahiye
+        const user = await User.findOne({ phone: phone, name: name });
+
+        if(user) {
+            // Agar details sahi hain, toh password badal do
+            user.password = newPassword;
+            await user.save();
+            res.json({ success: true, message: "Aapka naya password successfully set ho gaya hai! Ab aap login kar sakte hain." });
+        } else {
+            res.json({ success: false, message: "Galat jankari! Mobile number ya Naam account se match nahi ho raha hai." });
+        }
+    } catch (error) {
+        res.json({ success: false, message: "Server Error: " + error.message });
+    }
+});
+
+// ==========================================
+// 3. Admin & Product Routes
+// ==========================================
+
 // Get Users (For Admin Panel)
 app.get('/get-users', async (req, res) => {
     try {
@@ -90,9 +116,7 @@ app.get('/get-users', async (req, res) => {
     }
 });
 
-// ==========================================
-// नया रूट: एडमिन द्वारा नया प्रोडक्ट जोड़ना
-// ==========================================
+// Add New Product
 app.post('/add-product', async (req, res) => {
     try {
         const { name, price, image, whatsappMsg } = req.body;
@@ -104,9 +128,7 @@ app.post('/add-product', async (req, res) => {
     }
 });
 
-// ==========================================
-// नया रूट: वेबसाइट पर सारे प्रोडक्ट्स दिखाना
-// ==========================================
+// Get All Products (For Home Page & Manage Tab)
 app.get('/get-products', async (req, res) => {
     try {
         const products = await Product.find({});
@@ -116,6 +138,20 @@ app.get('/get-products', async (req, res) => {
     }
 });
 
+// Delete Product
+app.post('/delete-product', async (req, res) => {
+    try {
+        const { id } = req.body;
+        await Product.findByIdAndDelete(id);
+        res.json({ success: true, message: "Product successfully delete ho gaya!" });
+    } catch (error) {
+        res.json({ success: false, message: "Delete karne mein error aaya." });
+    }
+});
+
+// ==========================================
+// 4. Misc Routes & Server Start
+// ==========================================
 app.post('/razorpay-webhook', (req, res) => {
     res.status(200).send('ok');
 });
@@ -125,20 +161,6 @@ app.get('/', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-// ==========================================
-// नया रूट: एडमिन द्वारा प्रोडक्ट डिलीट करना 🗑️
-// ==========================================
-app.post('/delete-product', async (req, res) => {
-    try {
-        const { id } = req.body;
-        // MongoDB से उस ID वाले प्रोडक्ट को हमेशा के लिए डिलीट करना
-        await Product.findByIdAndDelete(id);
-        res.json({ success: true, message: "Product successfully delete ho gaya!" });
-    } catch (error) {
-        res.json({ success: false, message: "Delete karne mein error aaya." });
-    }
-});
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
-

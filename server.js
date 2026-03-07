@@ -1,76 +1,88 @@
 const express = require('express');
-const crypto = require('crypto');
-const bodyParser = require('body-parser');
 const mongoose = require('mongoose');
+const bodyParser = require('body-parser');
 
 const app = express();
-const PORT = 3000;
 
-// 1. अपनी MongoDB का लिंक (URI) और Razorpay Secret यहाँ डालें
-const MONGO_URI = 'mongodb+srv://prithwiraj325:<Prithvi@2002>@cluster.i6cxbvu.mongodb.net/?appName=Cluster';
-const RAZORPAY_WEBHOOK_SECRET = 'your_razorpay_webhook_secret_here';
-
-// 2. MongoDB से कनेक्ट करें
-mongoose.connect(MONGO_URI)
-    .then(() => console.log('✅ MongoDB Database Connected!'))
-    .catch((err) => console.error('❌ MongoDB Connection Error:', err));
-
-// 3. डेटा का ढांचा (Schema) बनाएं कि क्या-क्या सेव करना है
-const subscriberSchema = new mongoose.Schema({
-    phone: String,           // ग्राहक का मोबाइल नंबर
-    paymentId: String,       // Razorpay का पेमेंट ID
-    amount: Number,          // कितने पैसे दिए
-    status: { type: String, default: 'Active VIP' }, // स्टेटस
-    joinedAt: { type: Date, default: Date.now }      // जुड़ने की तारीख और समय
+// Cloudflare और Render को आपस में बात करने की परमिशन देना (CORS)
+app.use((req, res, next) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
+    next();
 });
-
-// इस ढांचे से 'Subscriber' नाम का मॉडल बनाएं
-const Subscriber = mongoose.model('Subscriber', subscriberSchema);
 
 app.use(bodyParser.json());
 
-// 4. Razorpay Webhook (पेमेंट रिसीव करने का रास्ता)
-app.post('/razorpay-webhook', async (req, res) => {
-    const razorpaySignature = req.headers['x-razorpay-signature'];
+// MongoDB से कनेक्ट करना
+mongoose.connect(process.env.MONGO_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true
+}).then(() => console.log("✅ MongoDB Database Connected!"))
+  .catch(err => console.log("❌ MongoDB Connection Error:", err));
 
-    const generatedSignature = crypto
-        .createHmac('sha256', RAZORPAY_WEBHOOK_SECRET)
-        .update(JSON.stringify(req.body))
-        .digest('hex');
+// ==========================================
+// 1. ग्राहक का डेटाबेस फॉर्मेट (Schema) बनाना
+// ==========================================
+const userSchema = new mongoose.Schema({
+    name: String,
+    phone: String,
+    password: String
+});
+const User = mongoose.model('User', userSchema);
 
-    // चेक करें कि रिक्वेस्ट असली है या नहीं
-    if (generatedSignature === razorpaySignature) {
-        const event = req.body.event;
+// ==========================================
+// 2. Register Route (नया अकाउंट बनाना और सेव करना)
+// ==========================================
+app.post('/register', async (req, res) => {
+    try {
+        const { name, phone, password } = req.body;
         
-        // अगर पेमेंट सक्सेसफुल हो गया है
-        if (event === 'payment.captured') {
-            const paymentData = req.body.payload.payment.entity;
-            
-            try {
-                // 5. नया कस्टमर डेटाबेस में सेव करें
-                const newSubscriber = new Subscriber({
-                    phone: paymentData.contact,
-                    paymentId: paymentData.id,
-                    amount: paymentData.amount / 100, // पैसे को रुपये में बदला
-                });
-
-                await newSubscriber.save(); // डेटा MongoDB में सेव हो गया!
-                console.log(`🎉 Naya VIP Member Save Ho Gaya! Phone: ${paymentData.contact}`);
-                
-                res.status(200).send('Webhook Received & Data Saved');
-            } catch (error) {
-                console.error('Data save karne mein error:', error);
-                res.status(500).send('Database Error');
-            }
-        } else {
-            res.status(200).send('Event ignored');
+        // चेक करना कि क्या यह नंबर पहले से रजिस्टर है?
+        const existingUser = await User.findOne({ phone: phone });
+        if(existingUser) {
+            return res.json({ success: false, message: "Yeh number pehle se register hai!" });
         }
-    } else {
-        console.error('❌ Invalid Razorpay Signature!');
-        res.status(400).send('Invalid Signature');
+
+        // नया ग्राहक डेटाबेस में सेव करना
+        const newUser = new User({ name, phone, password });
+        await newUser.save();
+        
+        res.json({ success: true, message: "Account successfully ban gaya!" });
+    } catch (error) {
+        res.json({ success: false, message: "Kuch gadbad hui, dobara try karein." });
     }
 });
 
+// ==========================================
+// 3. Login Route (अकाउंट में लॉगिन करना)
+// ==========================================
+app.post('/login', async (req, res) => {
+    try {
+        const { phone, password } = req.body;
+        
+        // डेटाबेस में ग्राहक का नंबर और पासवर्ड मैच करना
+        const user = await User.findOne({ phone: phone, password: password });
+        
+        if(user) {
+            res.json({ success: true, message: "Login Successful!", userName: user.name });
+        } else {
+            res.json({ success: false, message: "Mobile number ya password galat hai!" });
+        }
+    } catch (error) {
+        res.json({ success: false, message: "Server error." });
+    }
+});
+
+// ==========================================
+// 4. Razorpay Webhook (VIP पेमेंट के लिए)
+// ==========================================
+app.post('/razorpay-webhook', (req, res) => {
+    console.log("Payment Received:", req.body);
+    res.status(200).send('ok');
+});
+
+// सर्वर चालू करना
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`🚀 Backend Server running on port ${PORT}`);
+    console.log(`Server is running on port ${PORT}`);
 });

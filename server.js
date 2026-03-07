@@ -31,7 +31,7 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// Register Route (With Error Tracker)
+// Register Route
 app.post('/register', async (req, res) => {
     try {
         const { name, phone, password } = req.body;
@@ -43,24 +43,49 @@ app.post('/register', async (req, res) => {
         await newUser.save();
         res.json({ success: true, message: "Account successfully ban gaya!" });
     } catch (error) {
-        console.log("Registration Error:", error);
-        // Ab screen par asali error dikhega
         res.json({ success: false, message: "Asali Error: " + error.message });
     }
 });
 
-// Login Route
+// ==========================================
+// Login Route (अब यह एडमिन को पहचानेगा)
+// ==========================================
 app.post('/login', async (req, res) => {
     try {
         const { phone, password } = req.body;
+
+        // एडमिन (मालिक) के लिए स्पेशल लॉगिन
+        if (phone === "7739818651" && password === "Admin@123") {
+            return res.json({ 
+                success: true, 
+                message: "Welcome Boss!", 
+                userName: "Admin (Raj Telecome)", 
+                isAdmin: true // यह वेबसाइट को बताएगा कि एडमिन पैनल खोलना है
+            });
+        }
+
+        // आम ग्राहकों के लिए लॉगिन
         const user = await User.findOne({ phone: phone, password: password });
         if(user) {
-            res.json({ success: true, message: "Login Successful!", userName: user.name });
+            res.json({ success: true, message: "Login Successful!", userName: user.name, isAdmin: false });
         } else {
             res.json({ success: false, message: "Mobile number ya password galat hai!" });
         }
     } catch (error) {
         res.json({ success: false, message: "Asali Error: " + error.message });
+    }
+});
+
+// ==========================================
+// नया रूट: सभी ग्राहकों का डेटा मँगाना
+// ==========================================
+app.get('/get-users', async (req, res) => {
+    try {
+        // सुरक्षा के लिए हम ग्राहकों का पासवर्ड नहीं निकालेंगे, सिर्फ नाम और नंबर
+        const users = await User.find({}, { name: 1, phone: 1, _id: 0 });
+        res.json({ success: true, users: users });
+    } catch (error) {
+        res.json({ success: false, message: "Data nikalne mein error aaya." });
     }
 });
 

@@ -1,0 +1,15 @@
+{
+  "name": "raj-telecome-backend",
+  "version": "1.0.0",
+  "description": "Backend for Raj Telecome VIP Club",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "body-parser": "^1.20.2",
+    "crypto": "^1.0.1",
+    "express": "^4.18.2",
+    "mongoose": "^8.0.0"
+  }
+}

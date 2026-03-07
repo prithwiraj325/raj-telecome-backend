@@ -1,6 +1,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
+const bcrypt = require('bcryptjs'); // NAYA: Password Lock karne ka tool
 
 const app = express();
 
@@ -24,13 +25,11 @@ mongoose.connect(process.env.MONGO_URI, {
 }).then(() => console.log("✅ MongoDB Database Connected!"))
   .catch(err => console.log("❌ MongoDB Connection Error:", err));
 
-// ==========================================
-// 1. Database Schemas (User & Product)
-// ==========================================
+// Schemas
 const userSchema = new mongoose.Schema({
     name: String,
     phone: String,
-    password: String
+    password: String // Ab yahan khufiya code save hoga
 });
 const User = mongoose.model('User', userSchema);
 
@@ -43,10 +42,8 @@ const productSchema = new mongoose.Schema({
 const Product = mongoose.model('Product', productSchema);
 
 // ==========================================
-// 2. Authentication Routes
+// SECURE REGISTER: Password ko lock karna
 // ==========================================
-
-// Register
 app.post('/register', async (req, res) => {
     try {
         const { name, phone, password } = req.body;
@@ -54,57 +51,75 @@ app.post('/register', async (req, res) => {
         if(existingUser) {
             return res.json({ success: false, message: "Yeh number pehle se register hai!" });
         }
-        const newUser = new User({ name, phone, password });
+        
+        // NAYA: Password ko khufiya code (Hash) mein badalna
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+
+        // Database me khufiya password save karna
+        const newUser = new User({ name, phone, password: hashedPassword });
         await newUser.save();
-        res.json({ success: true, message: "Account successfully ban gaya!" });
+        
+        res.json({ success: true, message: "Secure Account successfully ban gaya!" });
     } catch (error) {
-        res.json({ success: false, message: "Asali Error: " + error.message });
+        res.json({ success: false, message: "Error: " + error.message });
     }
 });
 
-// Login (Admin & User) - NAYA UPDATE: Ab profile ke liye phone number bhi bhejega
+// ==========================================
+// SECURE LOGIN: Khufiya code ko match karna
+// ==========================================
 app.post('/login', async (req, res) => {
     try {
         const { phone, password } = req.body;
-        // Admin Login
+        
+        // Admin Login (Ise bhi future me secure karenge)
         if (phone === "7739818651" && password === "Admin@123") {
             return res.json({ success: true, message: "Welcome Boss!", userName: "Admin (Raj Telecome)", userPhone: "7739818651", isAdmin: true });
         }
+
         // Customer Login
-        const user = await User.findOne({ phone: phone, password: password });
-        if(user) {
-            res.json({ success: true, message: "Login Successful!", userName: user.name, userPhone: user.phone, isAdmin: false });
+        const user = await User.findOne({ phone: phone });
+        if(!user) {
+            return res.json({ success: false, message: "Mobile number register nahi hai!" });
+        }
+
+        // NAYA: Type kiye gaye password ko database ke khufiya code se check karna
+        const isMatch = await bcrypt.compare(password, user.password);
+        
+        if(isMatch) {
+            res.json({ success: true, message: "Secure Login Successful!", userName: user.name, userPhone: user.phone, isAdmin: false });
         } else {
-            res.json({ success: false, message: "Mobile number ya password galat hai!" });
+            res.json({ success: false, message: "Password galat hai!" });
         }
     } catch (error) {
-        res.json({ success: false, message: "Asali Error: " + error.message });
+        res.json({ success: false, message: "Error: " + error.message });
     }
 });
 
-// Forgot Password / Reset Password
+// SECURE RESET PASSWORD
 app.post('/reset-password', async (req, res) => {
     try {
         const { phone, name, newPassword } = req.body;
         const user = await User.findOne({ phone: phone, name: name });
 
         if(user) {
-            user.password = newPassword;
+            // Naye password ko bhi lock karke save karna
+            const salt = await bcrypt.genSalt(10);
+            const hashedPassword = await bcrypt.hash(newPassword, salt);
+            
+            user.password = hashedPassword;
             await user.save();
-            res.json({ success: true, message: "Aapka naya password successfully set ho gaya hai! Ab aap login kar sakte hain." });
+            res.json({ success: true, message: "Aapka naya password secure tarike se set ho gaya hai!" });
         } else {
             res.json({ success: false, message: "Galat jankari! Mobile number ya Naam account se match nahi ho raha hai." });
         }
     } catch (error) {
-        res.json({ success: false, message: "Server Error: " + error.message });
+        res.json({ success: false, message: "Error: " + error.message });
     }
 });
 
-// ==========================================
-// 3. Admin & Product Routes
-// ==========================================
-
-// Get Users (For Admin Panel)
+// Admin & Product Routes (Pehle jaise hi)
 app.get('/get-users', async (req, res) => {
     try {
         const users = await User.find({}, { name: 1, phone: 1, _id: 0 });
@@ -114,7 +129,6 @@ app.get('/get-users', async (req, res) => {
     }
 });
 
-// Add New Product
 app.post('/add-product', async (req, res) => {
     try {
         const { name, price, image, whatsappMsg } = req.body;
@@ -126,7 +140,6 @@ app.post('/add-product', async (req, res) => {
     }
 });
 
-// Get All Products (For Home Page & Manage Tab)
 app.get('/get-products', async (req, res) => {
     try {
         const products = await Product.find({});
@@ -136,7 +149,6 @@ app.get('/get-products', async (req, res) => {
     }
 });
 
-// Delete Product
 app.post('/delete-product', async (req, res) => {
     try {
         const { id } = req.body;
@@ -147,15 +159,12 @@ app.post('/delete-product', async (req, res) => {
     }
 });
 
-// ==========================================
-// 4. Misc Routes & Server Start
-// ==========================================
 app.post('/razorpay-webhook', (req, res) => {
     res.status(200).send('ok');
 });
 
 app.get('/', (req, res) => {
-    res.send("🚀 Raj Telecome Backend Server is Running Perfectly!");
+    res.send("🚀 Raj Telecome Secure Backend Server is Running!");
 });
 
 const PORT = process.env.PORT || 3000;

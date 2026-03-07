@@ -62,18 +62,18 @@ app.post('/register', async (req, res) => {
     }
 });
 
-// Login (Admin & User)
+// Login (Admin & User) - NAYA UPDATE: Ab profile ke liye phone number bhi bhejega
 app.post('/login', async (req, res) => {
     try {
         const { phone, password } = req.body;
         // Admin Login
         if (phone === "7739818651" && password === "Admin@123") {
-            return res.json({ success: true, message: "Welcome Boss!", userName: "Admin", isAdmin: true });
+            return res.json({ success: true, message: "Welcome Boss!", userName: "Admin (Raj Telecome)", userPhone: "7739818651", isAdmin: true });
         }
         // Customer Login
         const user = await User.findOne({ phone: phone, password: password });
         if(user) {
-            res.json({ success: true, message: "Login Successful!", userName: user.name, isAdmin: false });
+            res.json({ success: true, message: "Login Successful!", userName: user.name, userPhone: user.phone, isAdmin: false });
         } else {
             res.json({ success: false, message: "Mobile number ya password galat hai!" });
         }
@@ -86,11 +86,9 @@ app.post('/login', async (req, res) => {
 app.post('/reset-password', async (req, res) => {
     try {
         const { phone, name, newPassword } = req.body;
-        // Security Check: Name aur Phone match hona chahiye
         const user = await User.findOne({ phone: phone, name: name });
 
         if(user) {
-            // Agar details sahi hain, toh password badal do
             user.password = newPassword;
             await user.save();
             res.json({ success: true, message: "Aapka naya password successfully set ho gaya hai! Ab aap login kar sakte hain." });

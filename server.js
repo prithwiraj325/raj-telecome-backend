@@ -24,12 +24,27 @@ mongoose.connect(process.env.MONGO_URI, {
 }).then(() => console.log("✅ MongoDB Database Connected!"))
   .catch(err => console.log("❌ MongoDB Connection Error:", err));
 
+// ==========================================
+// 1. ग्राहक का डेटाबेस (पुराना वाला)
+// ==========================================
 const userSchema = new mongoose.Schema({
     name: String,
     phone: String,
     password: String
 });
 const User = mongoose.model('User', userSchema);
+
+// ==========================================
+// 2. नया: प्रोडक्ट्स का डेटाबेस 🛒
+// ==========================================
+const productSchema = new mongoose.Schema({
+    name: String,
+    price: String,
+    image: String, // यहाँ हम प्रोडक्ट का इमोजी या फोटो का लिंक डालेंगे
+    whatsappMsg: String // WhatsApp पर क्या मैसेज जाएगा
+});
+const Product = mongoose.model('Product', productSchema);
+
 
 // Register Route
 app.post('/register', async (req, res) => {
@@ -47,24 +62,13 @@ app.post('/register', async (req, res) => {
     }
 });
 
-// ==========================================
-// Login Route (अब यह एडमिन को पहचानेगा)
-// ==========================================
+// Login Route (Admin & User)
 app.post('/login', async (req, res) => {
     try {
         const { phone, password } = req.body;
-
-        // एडमिन (मालिक) के लिए स्पेशल लॉगिन
         if (phone === "7739818651" && password === "Admin@123") {
-            return res.json({ 
-                success: true, 
-                message: "Welcome Boss!", 
-                userName: "Admin (Raj Telecome)", 
-                isAdmin: true // यह वेबसाइट को बताएगा कि एडमिन पैनल खोलना है
-            });
+            return res.json({ success: true, message: "Welcome Boss!", userName: "Admin", isAdmin: true });
         }
-
-        // आम ग्राहकों के लिए लॉगिन
         const user = await User.findOne({ phone: phone, password: password });
         if(user) {
             res.json({ success: true, message: "Login Successful!", userName: user.name, isAdmin: false });
@@ -76,16 +80,39 @@ app.post('/login', async (req, res) => {
     }
 });
 
-// ==========================================
-// नया रूट: सभी ग्राहकों का डेटा मँगाना
-// ==========================================
+// Get Users (For Admin Panel)
 app.get('/get-users', async (req, res) => {
     try {
-        // सुरक्षा के लिए हम ग्राहकों का पासवर्ड नहीं निकालेंगे, सिर्फ नाम और नंबर
         const users = await User.find({}, { name: 1, phone: 1, _id: 0 });
         res.json({ success: true, users: users });
     } catch (error) {
         res.json({ success: false, message: "Data nikalne mein error aaya." });
+    }
+});
+
+// ==========================================
+// नया रूट: एडमिन द्वारा नया प्रोडक्ट जोड़ना
+// ==========================================
+app.post('/add-product', async (req, res) => {
+    try {
+        const { name, price, image, whatsappMsg } = req.body;
+        const newProduct = new Product({ name, price, image, whatsappMsg });
+        await newProduct.save();
+        res.json({ success: true, message: "Product Website par Live ho gaya! 🎉" });
+    } catch (error) {
+        res.json({ success: false, message: "Error: " + error.message });
+    }
+});
+
+// ==========================================
+// नया रूट: वेबसाइट पर सारे प्रोडक्ट्स दिखाना
+// ==========================================
+app.get('/get-products', async (req, res) => {
+    try {
+        const products = await Product.find({});
+        res.json({ success: true, products: products });
+    } catch (error) {
+        res.json({ success: false, message: "Products load nahi hue." });
     }
 });
 

@@ -2,20 +2,21 @@ const express = require('express');
 const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
 const bcrypt = require('bcryptjs'); 
+const cors = require('cors');
+const Razorpay = require('razorpay');
 
 const app = express();
 
-app.use((req, res, next) => {
-    res.header("Access-Control-Allow-Origin", "*");
-    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
-    if (req.method === 'OPTIONS') {
-        return res.status(200).end();
-    }
-    next();
-});
-
+app.use(cors());
 app.use(bodyParser.json());
+
+// ==========================================
+// 🔴 YAHAN APNI RAZORPAY KEYS DALEIN 🔴
+// ==========================================
+const razorpay = new Razorpay({
+  key_id: 'YOUR_RAZORPAY_KEY_ID',       // <-- ISE BADLEN
+  key_secret: 'YOUR_RAZORPAY_KEY_SECRET' // <-- ISE BADLEN
+});
 
 mongoose.connect(process.env.MONGO_URI, {
     useNewUrlParser: true,
@@ -42,16 +43,29 @@ const productSchema = new mongoose.Schema({
 });
 const Product = mongoose.model('Product', productSchema);
 
-// NAYA: Insurance Enquiry ka Database (Vehicle Number add kiya)
 const insuranceSchema = new mongoose.Schema({
     name: String,
     phone: String,
     vehicleType: String,
-    vehicleNumber: String, // <-- NAYA FIELD
+    vehicleNumber: String,
     date: { type: Date, default: Date.now }
 });
 const Insurance = mongoose.model('Insurance', insuranceSchema);
 
+// NAYA: Orders Database
+const orderSchema = new mongoose.Schema({
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    customerName: String,
+    customerPhone: String,
+    items: Array, // Cart mein kya-kya hai (Name, Price, Image)
+    totalAmount: Number,
+    paymentStatus: { type: String, default: 'Pending' }, // Pending / Paid / Failed
+    orderStatus: { type: String, default: 'Processing' }, // Processing / Shipped / Completed / Cancelled
+    razorpayOrderId: String,
+    razorpayPaymentId: String,
+    date: { type: Date, default: Date.now }
+});
+const Order = mongoose.model('Order', orderSchema);
 
 // ==========================================
 // 2. Authentication Routes
@@ -75,7 +89,8 @@ app.post('/login', async (req, res) => {
     try {
         const { phone, password } = req.body;
         if (phone === "7739818651" && password === "Admin@123") {
-            return res.json({ success: true, message: "Welcome Boss!", userName: "Admin (Raj Telecome)", userPhone: "7739818651", isVIP: true, isAdmin: true });
+            // NAYA: Admin login mein uski dummy ID (000) bheji hai taaki order me error na aaye
+            return res.json({ success: true, message: "Welcome Boss!", userId: "000000000000000000000000", userName: "Admin (Raj Telecome)", userPhone: "7739818651", isVIP: true, isAdmin: true });
         }
 
         const user = await User.findOne({ phone: phone });
@@ -83,7 +98,8 @@ app.post('/login', async (req, res) => {
 
         const isMatch = await bcrypt.compare(password, user.password);
         if(isMatch) {
-            res.json({ success: true, message: "Secure Login Successful!", userName: user.name, userPhone: user.phone, isVIP: user.isVIP, isAdmin: false });
+            // NAYA: userId bhi frontend ko bheja
+            res.json({ success: true, message: "Secure Login Successful!", userId: user._id, userName: user.name, userPhone: user.phone, isVIP: user.isVIP, isAdmin: false });
         } else { res.json({ success: false, message: "Password galat hai!" }); }
     } catch (error) { res.json({ success: false, message: "Error: " + error.message }); }
 });
@@ -103,15 +119,14 @@ app.post('/reset-password', async (req, res) => {
     } catch (error) { res.json({ success: false, message: "Error: " + error.message }); }
 });
 
-
 // ==========================================
-// 3. Admin & Product Routes
+// 3. Product & Admin Routes
 // ==========================================
 app.get('/get-users', async (req, res) => {
     try {
         const users = await User.find({}, { name: 1, phone: 1, isVIP: 1, _id: 0 });
         res.json({ success: true, users: users });
-    } catch (error) { res.json({ success: false, message: "Data nikalne mein error aaya." }); }
+    } catch (error) { res.json({ success: false, message: "Data error." }); }
 });
 
 app.post('/add-product', async (req, res) => {
@@ -119,7 +134,7 @@ app.post('/add-product', async (req, res) => {
         const { name, price, image, whatsappMsg } = req.body;
         const newProduct = new Product({ name, price, image, whatsappMsg });
         await newProduct.save();
-        res.json({ success: true, message: "Product Website par Live ho gaya!" });
+        res.json({ success: true, message: "Product Live ho gaya!" });
     } catch (error) { res.json({ success: false, message: "Error: " + error.message }); }
 });
 
@@ -127,67 +142,127 @@ app.get('/get-products', async (req, res) => {
     try {
         const products = await Product.find({});
         res.json({ success: true, products: products });
-    } catch (error) { res.json({ success: false, message: "Products load nahi hue." }); }
+    } catch (error) { res.json({ success: false, message: "Products error." }); }
 });
 
 app.post('/delete-product', async (req, res) => {
     try {
         const { id } = req.body;
         await Product.findByIdAndDelete(id);
-        res.json({ success: true, message: "Product successfully delete ho gaya!" });
-    } catch (error) { res.json({ success: false, message: "Delete karne mein error aaya." }); }
+        res.json({ success: true, message: "Product delete ho gaya!" });
+    } catch (error) { res.json({ success: false, message: "Delete error." }); }
 });
 
-
-// ==========================================
-// 4. Insurance Enquiry Routes
-// ==========================================
 app.post('/submit-insurance', async (req, res) => {
     try {
-        // NAYA: vehicleNumber bhi receive kiya
         const { name, phone, vehicleType, vehicleNumber } = req.body;
         const newEnquiry = new Insurance({ name, phone, vehicleType, vehicleNumber });
         await newEnquiry.save();
-        res.json({ success: true, message: "Aapki jankari hum tak pahunch gayi hai! Hum jald hi aapko best policy ke liye call karenge." });
-    } catch (error) {
-        res.json({ success: false, message: "Error: " + error.message });
-    }
+        res.json({ success: true, message: "Jankari mil gayi hai!" });
+    } catch (error) { res.json({ success: false, message: "Error: " + error.message }); }
 });
 
 app.get('/get-insurance-leads', async (req, res) => {
     try {
         const leads = await Insurance.find().sort({ date: -1 });
         res.json({ success: true, leads: leads });
+    } catch (error) { res.json({ success: false, message: "Leads error." }); }
+});
+
+// ==========================================
+// 4. NAYA: E-Commerce Orders & Payment System
+// ==========================================
+
+// Step 4.1: Razorpay se naya 'Order' generate karna
+app.post('/create-order', async (req, res) => {
+    try {
+        const { userId, customerName, customerPhone, items, totalAmount } = req.body;
+
+        // Razorpay ko hamesha paise (paise = Rupees * 100) me amount chahiye
+        const options = {
+            amount: totalAmount * 100, 
+            currency: "INR",
+            receipt: `receipt_${Date.now()}`
+        };
+
+        const razorpayOrder = await razorpay.orders.create(options);
+
+        // Data ko 'Pending' status ke sath save kar lena
+        const newOrder = new Order({
+            userId, customerName, customerPhone, items, totalAmount,
+            razorpayOrderId: razorpayOrder.id,
+            paymentStatus: 'Pending',
+            orderStatus: 'Processing'
+        });
+        await newOrder.save();
+
+        res.json({ 
+            success: true, 
+            order_id: razorpayOrder.id, 
+            amount: options.amount, 
+            key_id: 'YOUR_RAZORPAY_KEY_ID', // Frontend ke liye
+            db_order_id: newOrder._id 
+        });
+
     } catch (error) {
-        res.json({ success: false, message: "Leads load nahi hui." });
+        console.log("Create Order Error:", error);
+        res.json({ success: false, message: "Payment link generate nahi ho paya." });
+    }
+});
+
+// Step 4.2: Payment Success hone ke baad Database me 'Paid' likhna
+app.post('/verify-payment', async (req, res) => {
+    try {
+        const { razorpay_order_id, razorpay_payment_id, db_order_id } = req.body;
+        
+        // Asli e-commerce mein yahan 'Signature Verification' bhi hota hai (security ke liye),
+        // Par abhi MVP ke liye hum seedha 'Paid' mark kar rahe hain.
+        
+        await Order.findByIdAndUpdate(db_order_id, {
+            paymentStatus: 'Paid',
+            razorpayPaymentId: razorpay_payment_id
+        });
+
+        res.json({ success: true, message: "Payment Successful aur Order Confirm ho gaya!" });
+    } catch (error) {
+        res.json({ success: false, message: "Payment update fail ho gaya." });
+    }
+});
+
+// Step 4.3: User apni Order History dekhega
+app.post('/my-orders', async (req, res) => {
+    try {
+        const { userId } = req.body;
+        const orders = await Order.find({ userId: userId }).sort({ date: -1 });
+        res.json({ success: true, orders: orders });
+    } catch (error) {
+        res.json({ success: false, message: "Orders load nahi hue." });
+    }
+});
+
+// Step 4.4: Admin sare Orders dekhega aur Status Badlega
+app.get('/all-orders-admin', async (req, res) => {
+    try {
+        const orders = await Order.find().sort({ date: -1 });
+        res.json({ success: true, orders: orders });
+    } catch (error) {
+        res.json({ success: false, message: "Admin orders error." });
+    }
+});
+
+app.post('/update-order-status', async (req, res) => {
+    try {
+        const { orderId, newStatus } = req.body;
+        await Order.findByIdAndUpdate(orderId, { orderStatus: newStatus });
+        res.json({ success: true, message: "Status update ho gaya!" });
+    } catch (error) {
+        res.json({ success: false, message: "Status error." });
     }
 });
 
 
-// ==========================================
-// 5. RAZORPAY WEBHOOK
-// ==========================================
-app.post('/razorpay-webhook', async (req, res) => {
-    try {
-        const event = req.body.event;
-        if (event === 'payment.captured' || event === 'payment.authorized') {
-            const paymentEntity = req.body.payload.payment.entity;
-            let customerPhone = paymentEntity.contact; 
-            if (customerPhone) {
-                customerPhone = customerPhone.replace("+91", "").trim();
-                const user = await User.findOne({ phone: customerPhone });
-                if (user) {
-                    user.isVIP = true;
-                    await user.save();
-                }
-            }
-        }
-        res.status(200).send('Webhook received');
-    } catch (error) { res.status(500).send('Webhook Error'); }
-});
-
 app.get('/', (req, res) => {
-    res.send("🚀 Raj Telecome Secure Backend Server is Running!");
+    res.send("🚀 Raj Telecome Full E-Commerce Server is Running!");
 });
 
 const PORT = process.env.PORT || 3000;

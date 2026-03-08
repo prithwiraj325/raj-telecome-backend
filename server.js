@@ -3,20 +3,11 @@ const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
 const bcrypt = require('bcryptjs'); 
 const cors = require('cors');
-const Razorpay = require('razorpay');
 
 const app = express();
 
 app.use(cors());
 app.use(bodyParser.json());
-
-// ==========================================
-// 🔴 YAHAN APNI RAZORPAY KEYS DALEIN 🔴
-// ==========================================
-const razorpay = new Razorpay({
-  key_id: 'YOUR_RAZORPAY_KEY_ID',       // <-- ISE BADLEN
-  key_secret: 'YOUR_RAZORPAY_KEY_SECRET' // <-- ISE BADLEN
-});
 
 mongoose.connect(process.env.MONGO_URI, {
     useNewUrlParser: true,
@@ -52,17 +43,15 @@ const insuranceSchema = new mongoose.Schema({
 });
 const Insurance = mongoose.model('Insurance', insuranceSchema);
 
-// NAYA: Orders Database
+// NAYA: E-Commerce Orders Database
 const orderSchema = new mongoose.Schema({
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     customerName: String,
     customerPhone: String,
-    items: Array, // Cart mein kya-kya hai (Name, Price, Image)
+    items: Array, 
     totalAmount: Number,
-    paymentStatus: { type: String, default: 'Pending' }, // Pending / Paid / Failed
-    orderStatus: { type: String, default: 'Processing' }, // Processing / Shipped / Completed / Cancelled
-    razorpayOrderId: String,
-    razorpayPaymentId: String,
+    paymentMode: { type: String, default: 'Cash on Delivery / WhatsApp' }, 
+    orderStatus: { type: String, default: 'Pending' }, // Pending / Processing / Completed / Cancelled
     date: { type: Date, default: Date.now }
 });
 const Order = mongoose.model('Order', orderSchema);
@@ -89,7 +78,7 @@ app.post('/login', async (req, res) => {
     try {
         const { phone, password } = req.body;
         if (phone === "7739818651" && password === "Admin@123") {
-            // NAYA: Admin login mein uski dummy ID (000) bheji hai taaki order me error na aaye
+            // Admin dummy ID
             return res.json({ success: true, message: "Welcome Boss!", userId: "000000000000000000000000", userName: "Admin (Raj Telecome)", userPhone: "7739818651", isVIP: true, isAdmin: true });
         }
 
@@ -98,7 +87,6 @@ app.post('/login', async (req, res) => {
 
         const isMatch = await bcrypt.compare(password, user.password);
         if(isMatch) {
-            // NAYA: userId bhi frontend ko bheja
             res.json({ success: true, message: "Secure Login Successful!", userId: user._id, userName: user.name, userPhone: user.phone, isVIP: user.isVIP, isAdmin: false });
         } else { res.json({ success: false, message: "Password galat hai!" }); }
     } catch (error) { res.json({ success: false, message: "Error: " + error.message }); }
@@ -120,7 +108,7 @@ app.post('/reset-password', async (req, res) => {
 });
 
 // ==========================================
-// 3. Product & Admin Routes
+// 3. Product & Insurance Routes
 // ==========================================
 app.get('/get-users', async (req, res) => {
     try {
@@ -170,66 +158,29 @@ app.get('/get-insurance-leads', async (req, res) => {
 });
 
 // ==========================================
-// 4. NAYA: E-Commerce Orders & Payment System
+// 4. Order Tracking System (Direct Order)
 // ==========================================
 
-// Step 4.1: Razorpay se naya 'Order' generate karna
-app.post('/create-order', async (req, res) => {
+// Step 4.1: Customer naya order place karega
+app.post('/place-order', async (req, res) => {
     try {
         const { userId, customerName, customerPhone, items, totalAmount } = req.body;
 
-        // Razorpay ko hamesha paise (paise = Rupees * 100) me amount chahiye
-        const options = {
-            amount: totalAmount * 100, 
-            currency: "INR",
-            receipt: `receipt_${Date.now()}`
-        };
-
-        const razorpayOrder = await razorpay.orders.create(options);
-
-        // Data ko 'Pending' status ke sath save kar lena
         const newOrder = new Order({
             userId, customerName, customerPhone, items, totalAmount,
-            razorpayOrderId: razorpayOrder.id,
-            paymentStatus: 'Pending',
-            orderStatus: 'Processing'
+            paymentMode: 'Cash on Delivery / WhatsApp',
+            orderStatus: 'Pending'
         });
         await newOrder.save();
 
-        res.json({ 
-            success: true, 
-            order_id: razorpayOrder.id, 
-            amount: options.amount, 
-            key_id: 'YOUR_RAZORPAY_KEY_ID', // Frontend ke liye
-            db_order_id: newOrder._id 
-        });
-
+        res.json({ success: true, message: "Aapka Order successfully confirm ho gaya hai!" });
     } catch (error) {
-        console.log("Create Order Error:", error);
-        res.json({ success: false, message: "Payment link generate nahi ho paya." });
+        console.log("Order Error:", error);
+        res.json({ success: false, message: "Order save nahi ho paya." });
     }
 });
 
-// Step 4.2: Payment Success hone ke baad Database me 'Paid' likhna
-app.post('/verify-payment', async (req, res) => {
-    try {
-        const { razorpay_order_id, razorpay_payment_id, db_order_id } = req.body;
-        
-        // Asli e-commerce mein yahan 'Signature Verification' bhi hota hai (security ke liye),
-        // Par abhi MVP ke liye hum seedha 'Paid' mark kar rahe hain.
-        
-        await Order.findByIdAndUpdate(db_order_id, {
-            paymentStatus: 'Paid',
-            razorpayPaymentId: razorpay_payment_id
-        });
-
-        res.json({ success: true, message: "Payment Successful aur Order Confirm ho gaya!" });
-    } catch (error) {
-        res.json({ success: false, message: "Payment update fail ho gaya." });
-    }
-});
-
-// Step 4.3: User apni Order History dekhega
+// Step 4.2: Customer apni profile mein orders dekhega
 app.post('/my-orders', async (req, res) => {
     try {
         const { userId } = req.body;
@@ -240,7 +191,7 @@ app.post('/my-orders', async (req, res) => {
     }
 });
 
-// Step 4.4: Admin sare Orders dekhega aur Status Badlega
+// Step 4.3: Admin panel mein sabhi orders dikhenge
 app.get('/all-orders-admin', async (req, res) => {
     try {
         const orders = await Order.find().sort({ date: -1 });
@@ -250,16 +201,16 @@ app.get('/all-orders-admin', async (req, res) => {
     }
 });
 
+// Step 4.4: Admin kisi order ko Pending se Completed karega
 app.post('/update-order-status', async (req, res) => {
     try {
         const { orderId, newStatus } = req.body;
         await Order.findByIdAndUpdate(orderId, { orderStatus: newStatus });
-        res.json({ success: true, message: "Status update ho gaya!" });
+        res.json({ success: true, message: "Order ka status update ho gaya!" });
     } catch (error) {
-        res.json({ success: false, message: "Status error." });
+        res.json({ success: false, message: "Status update error." });
     }
 });
-
 
 app.get('/', (req, res) => {
     res.send("🚀 Raj Telecome Full E-Commerce Server is Running!");

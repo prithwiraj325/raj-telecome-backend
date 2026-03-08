@@ -24,13 +24,13 @@ mongoose.connect(process.env.MONGO_URI, {
   .catch(err => console.log("❌ MongoDB Connection Error:", err));
 
 // ==========================================
-// 1. Schemas (User mein isVIP add kiya gaya)
+// 1. Schemas (Database Tables)
 // ==========================================
 const userSchema = new mongoose.Schema({
     name: String,
     phone: String,
     password: String,
-    isVIP: { type: Boolean, default: false } // NAYA: VIP Status
+    isVIP: { type: Boolean, default: false }
 });
 const User = mongoose.model('User', userSchema);
 
@@ -42,6 +42,16 @@ const productSchema = new mongoose.Schema({
 });
 const Product = mongoose.model('Product', productSchema);
 
+// NAYA: Insurance Enquiry ka Database
+const insuranceSchema = new mongoose.Schema({
+    name: String,
+    phone: String,
+    vehicleType: String,
+    date: { type: Date, default: Date.now }
+});
+const Insurance = mongoose.model('Insurance', insuranceSchema);
+
+
 // ==========================================
 // 2. Authentication Routes
 // ==========================================
@@ -49,47 +59,32 @@ app.post('/register', async (req, res) => {
     try {
         const { name, phone, password } = req.body;
         const existingUser = await User.findOne({ phone: phone });
-        if(existingUser) {
-            return res.json({ success: false, message: "Yeh number pehle se register hai!" });
-        }
+        if(existingUser) { return res.json({ success: false, message: "Yeh number pehle se register hai!" }); }
         
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
-        // Naya account hamesha normal user hoga (isVIP: false)
         const newUser = new User({ name, phone, password: hashedPassword, isVIP: false });
         await newUser.save();
-        
         res.json({ success: true, message: "Secure Account successfully ban gaya!" });
-    } catch (error) {
-        res.json({ success: false, message: "Error: " + error.message });
-    }
+    } catch (error) { res.json({ success: false, message: "Error: " + error.message }); }
 });
 
 app.post('/login', async (req, res) => {
     try {
         const { phone, password } = req.body;
-        
         if (phone === "7739818651" && password === "Admin@123") {
             return res.json({ success: true, message: "Welcome Boss!", userName: "Admin (Raj Telecome)", userPhone: "7739818651", isVIP: true, isAdmin: true });
         }
 
         const user = await User.findOne({ phone: phone });
-        if(!user) {
-            return res.json({ success: false, message: "Mobile number register nahi hai!" });
-        }
+        if(!user) { return res.json({ success: false, message: "Mobile number register nahi hai!" }); }
 
         const isMatch = await bcrypt.compare(password, user.password);
-        
         if(isMatch) {
-            // NAYA: isVIP status bhi frontend ko bheja
             res.json({ success: true, message: "Secure Login Successful!", userName: user.name, userPhone: user.phone, isVIP: user.isVIP, isAdmin: false });
-        } else {
-            res.json({ success: false, message: "Password galat hai!" });
-        }
-    } catch (error) {
-        res.json({ success: false, message: "Error: " + error.message });
-    }
+        } else { res.json({ success: false, message: "Password galat hai!" }); }
+    } catch (error) { res.json({ success: false, message: "Error: " + error.message }); }
 });
 
 app.post('/reset-password', async (req, res) => {
@@ -100,29 +95,22 @@ app.post('/reset-password', async (req, res) => {
         if(user) {
             const salt = await bcrypt.genSalt(10);
             const hashedPassword = await bcrypt.hash(newPassword, salt);
-            
             user.password = hashedPassword;
             await user.save();
             res.json({ success: true, message: "Aapka naya password secure tarike se set ho gaya hai!" });
-        } else {
-            res.json({ success: false, message: "Galat jankari! Mobile number ya Naam account se match nahi ho raha hai." });
-        }
-    } catch (error) {
-        res.json({ success: false, message: "Error: " + error.message });
-    }
+        } else { res.json({ success: false, message: "Galat jankari! Mobile number ya Naam account se match nahi ho raha hai." }); }
+    } catch (error) { res.json({ success: false, message: "Error: " + error.message }); }
 });
+
 
 // ==========================================
 // 3. Admin & Product Routes
 // ==========================================
 app.get('/get-users', async (req, res) => {
     try {
-        // NAYA: isVIP bhi mangwaya admin panel ke liye
         const users = await User.find({}, { name: 1, phone: 1, isVIP: 1, _id: 0 });
         res.json({ success: true, users: users });
-    } catch (error) {
-        res.json({ success: false, message: "Data nikalne mein error aaya." });
-    }
+    } catch (error) { res.json({ success: false, message: "Data nikalne mein error aaya." }); }
 });
 
 app.post('/add-product', async (req, res) => {
@@ -131,18 +119,14 @@ app.post('/add-product', async (req, res) => {
         const newProduct = new Product({ name, price, image, whatsappMsg });
         await newProduct.save();
         res.json({ success: true, message: "Product Website par Live ho gaya!" });
-    } catch (error) {
-        res.json({ success: false, message: "Error: " + error.message });
-    }
+    } catch (error) { res.json({ success: false, message: "Error: " + error.message }); }
 });
 
 app.get('/get-products', async (req, res) => {
     try {
         const products = await Product.find({});
         res.json({ success: true, products: products });
-    } catch (error) {
-        res.json({ success: false, message: "Products load nahi hue." });
-    }
+    } catch (error) { res.json({ success: false, message: "Products load nahi hue." }); }
 });
 
 app.post('/delete-product', async (req, res) => {
@@ -150,40 +134,56 @@ app.post('/delete-product', async (req, res) => {
         const { id } = req.body;
         await Product.findByIdAndDelete(id);
         res.json({ success: true, message: "Product successfully delete ho gaya!" });
+    } catch (error) { res.json({ success: false, message: "Delete karne mein error aaya." }); }
+});
+
+
+// ==========================================
+// 4. NAYA: Insurance Enquiry Routes
+// ==========================================
+app.post('/submit-insurance', async (req, res) => {
+    try {
+        const { name, phone, vehicleType } = req.body;
+        const newEnquiry = new Insurance({ name, phone, vehicleType });
+        await newEnquiry.save();
+        res.json({ success: true, message: "Aapki jankari hum tak pahunch gayi hai! Hum jald hi aapko best policy ke liye call karenge." });
     } catch (error) {
-        res.json({ success: false, message: "Delete karne mein error aaya." });
+        res.json({ success: false, message: "Error: " + error.message });
     }
 });
 
+// Admin panel ke liye sari insurance leads mangwana
+app.get('/get-insurance-leads', async (req, res) => {
+    try {
+        // Sabse nayi lead sabse upar aayegi
+        const leads = await Insurance.find().sort({ date: -1 });
+        res.json({ success: true, leads: leads });
+    } catch (error) {
+        res.json({ success: false, message: "Leads load nahi hui." });
+    }
+});
+
+
 // ==========================================
-// 4. RAZORPAY WEBHOOK (Automated VIP Status)
+// 5. RAZORPAY WEBHOOK
 // ==========================================
 app.post('/razorpay-webhook', async (req, res) => {
     try {
         const event = req.body.event;
-
-        // Jab payment successful ho jaye
         if (event === 'payment.captured' || event === 'payment.authorized') {
             const paymentEntity = req.body.payload.payment.entity;
             let customerPhone = paymentEntity.contact; 
-
             if (customerPhone) {
-                // Razorpay phone number ke aage +91 lagata hai, use hata kar match karenge
                 customerPhone = customerPhone.replace("+91", "").trim();
-
                 const user = await User.findOne({ phone: customerPhone });
                 if (user) {
                     user.isVIP = true;
                     await user.save();
-                    console.log(`✅ VIP Status Active for: ${customerPhone}`);
                 }
             }
         }
         res.status(200).send('Webhook received');
-    } catch (error) {
-        console.log("Webhook Error:", error);
-        res.status(500).send('Webhook Error');
-    }
+    } catch (error) { res.status(500).send('Webhook Error'); }
 });
 
 app.get('/', (req, res) => {

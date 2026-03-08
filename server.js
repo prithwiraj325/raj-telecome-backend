@@ -42,11 +42,12 @@ const productSchema = new mongoose.Schema({
 });
 const Product = mongoose.model('Product', productSchema);
 
-// NAYA: Insurance Enquiry ka Database
+// NAYA: Insurance Enquiry ka Database (Vehicle Number add kiya)
 const insuranceSchema = new mongoose.Schema({
     name: String,
     phone: String,
     vehicleType: String,
+    vehicleNumber: String, // <-- NAYA FIELD
     date: { type: Date, default: Date.now }
 });
 const Insurance = mongoose.model('Insurance', insuranceSchema);
@@ -139,12 +140,13 @@ app.post('/delete-product', async (req, res) => {
 
 
 // ==========================================
-// 4. NAYA: Insurance Enquiry Routes
+// 4. Insurance Enquiry Routes
 // ==========================================
 app.post('/submit-insurance', async (req, res) => {
     try {
-        const { name, phone, vehicleType } = req.body;
-        const newEnquiry = new Insurance({ name, phone, vehicleType });
+        // NAYA: vehicleNumber bhi receive kiya
+        const { name, phone, vehicleType, vehicleNumber } = req.body;
+        const newEnquiry = new Insurance({ name, phone, vehicleType, vehicleNumber });
         await newEnquiry.save();
         res.json({ success: true, message: "Aapki jankari hum tak pahunch gayi hai! Hum jald hi aapko best policy ke liye call karenge." });
     } catch (error) {
@@ -152,10 +154,8 @@ app.post('/submit-insurance', async (req, res) => {
     }
 });
 
-// Admin panel ke liye sari insurance leads mangwana
 app.get('/get-insurance-leads', async (req, res) => {
     try {
-        // Sabse nayi lead sabse upar aayegi
         const leads = await Insurance.find().sort({ date: -1 });
         res.json({ success: true, leads: leads });
     } catch (error) {

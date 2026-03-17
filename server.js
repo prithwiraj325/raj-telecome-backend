@@ -3,6 +3,13 @@ const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
 const bcrypt = require('bcryptjs'); 
 const cors = require('cors');
+// 🔥 FIREBASE ADMIN SETUP (Auto Notification)
+const admin = require("firebase-admin");
+const serviceAccount = require("./firebase-key.json"); // Jo file abhi download ki hai
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
 
 const app = express();
 app.use(cors());
@@ -162,7 +169,30 @@ app.get('/get-settings', async (req, res) => {
     } catch (err) { res.json({ success: false }); }
 });
 app.post('/update-settings', async (req, res) => { try { await Settings.findOneAndUpdate({}, req.body, { upsert: true }); res.json({ success: true, message: "Website Update Ho Gayi!" }); } catch (err) { res.json({ success: false }); } });
-app.post('/add-job', async (req, res) => { try { await new Job(req.body).save(); res.json({ success: true, message: "Job/Form Website par Live ho gaya!" }); } catch (err) { res.json({ success: false }); } });
+// 📝 Naya Form Add karna + Auto Notification bhejna
+app.post('/add-job', async (req, res) => { 
+    try { 
+        await new Job(req.body).save(); 
+        
+        // 🔥 AUTO NOTIFICATION MAGIC
+        const message = {
+            notification: {
+                title: "🚨 Naya Sarkari Form Aa Gaya!",
+                body: `${req.body.title} - Raj Telecome par aakar aaj hi bharwayein!`
+            },
+            topic: "all_users" // Ye message un sabhi ko jayega jinke paas app hai
+        };
+        
+        // Firebase ko order dena ki sabko bhej do
+        admin.messaging().send(message)
+            .then(response => console.log("✅ Notification Sent:", response))
+            .catch(error => console.log("❌ Notification Error:", error));
+
+        res.json({ success: true, message: "Job Live ho gaya aur sabko Notification chala gaya!" }); 
+    } catch (err) { 
+        res.json({ success: false }); 
+    } 
+});
 app.get('/get-jobs', async (req, res) => { try { const jobs = await Job.find().sort({_id: -1}); res.json({ success: true, jobs }); } catch (err) { res.json({ success: false }); } });
 app.post('/delete-job', async (req, res) => { try { await Job.findByIdAndDelete(req.body.id); res.json({ success: true, message: "Delete ho gaya" }); } catch (err) { res.json({ success: false }); } });
 

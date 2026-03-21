@@ -3,199 +3,131 @@ const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
 const bcrypt = require('bcryptjs'); 
 const cors = require('cors');
-// 🔥 FIREBASE ADMIN SETUP (Auto Notification)
-const admin = require("firebase-admin");
-const serviceAccount = require("./firebase-key.json"); // Jo file abhi download ki hai
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
-});
+// 🔥 FIREBASE ADMIN (For Automatic Push Notifications)
+const admin = require("firebase-admin");
+try {
+    const serviceAccount = require("./firebase-key.json"); // Downloaded from Firebase
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount)
+    });
+    console.log("✅ Firebase Admin Connected!");
+} catch(err) {
+    console.log("⚠️ Firebase Key missing. Push notifications disabled.");
+}
 
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
 // ==========================================
-// 🗄️ MongoDB Database Connection
+// 🗄️ MONGODB CONNECTION
 // ==========================================
 mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-  .then(() => console.log("✅ MongoDB Connected! (Marketplace Active)"))
+  .then(() => console.log("✅ MongoDB Master Database Connected!"))
   .catch(err => console.log("❌ MongoDB Error:", err));
 
 // ==========================================
-// 1. Schemas (Database Tables)
+// 1. DATABASES (Schemas)
 // ==========================================
-const userSchema = new mongoose.Schema({ name: String, phone: String, password: String, isVIP: { type: Boolean, default: false }, address: { type: String, default: "" } });
-const User = mongoose.model('User', userSchema);
+const User = mongoose.model('User', new mongoose.Schema({ name: String, phone: String, password: String, isVIP: { type: Boolean, default: false }, address: String }));
 
-// 🔥 NAYA: Seller Schema (Dusre Dukandaron ke liye)
-const sellerSchema = new mongoose.Schema({
-    shopName: String,
-    ownerName: String,
-    phone: String,
-    password: String,
-    walletBalance: { type: Number, default: 0 }, // Unki kamai (Kati hui commission ke baad)
-    isApproved: { type: Boolean, default: true }, // Aap chahein to baad me ise false karke manually approve kar sakte hain
-    joinedAt: { type: Date, default: Date.now }
+// Seller (B2B Marketplace)
+const Seller = mongoose.model('Seller', new mongoose.Schema({ shopName: String, ownerName: String, phone: String, password: String, walletBalance: { type: Number, default: 0 }, isApproved: { type: Boolean, default: true } }));
+
+// Products (With Shop Name & Commission)
+const Product = mongoose.model('Product', new mongoose.Schema({ name: String, price: String, image: String, sellerId: { type: String, default: 'admin' }, shopName: { type: String, default: 'Raj Telecome' }, commissionRate: { type: Number, default: 10 }, createdAt: { type: Date, default: Date.now } }));
+
+const Order = mongoose.model('Order', new mongoose.Schema({ userId: String, customerName: String, customerPhone: String, deliveryAddress: String, items: Array, totalAmount: Number, paymentMode: String, orderStatus: { type: String, default: 'Pending' }, date: { type: Date, default: Date.now } }));
+
+const Job = mongoose.model('Job', new mongoose.Schema({ title: String, category: String, lastDate: String, fee: String, shortDesc: String }));
+
+// ==========================================
+// 2. AUTHENTICATION APIs (Login/Register)
+// ==========================================
+app.post('/register', async (req, res) => { 
+    try { 
+        const { name, phone, password } = req.body; 
+        if(await User.findOne({ phone })) return res.json({ success: false, message: "Number already registered!" }); 
+        const salt = await bcrypt.genSalt(10); const hashedPassword = await bcrypt.hash(password, salt); 
+        await new User({ name, phone, password: hashedPassword }).save(); 
+        res.json({ success: true, message: "Account Created!" }); 
+    } catch (err) { res.json({ success: false, message: "Error" }); } 
 });
-const Seller = mongoose.model('Seller', sellerSchema);
 
-// 🔥 MODIFIED: Product Schema (Ab isme dukaan ka naam bhi aayega)
-const productSchema = new mongoose.Schema({ 
-    name: String, 
-    price: String, 
-    image: String, 
-    whatsappMsg: String,
-    // --- B2B MARKETPLACE FIELDS ---
-    sellerId: { type: String, default: 'admin' }, // Kisne upload kiya
-    shopName: { type: String, default: 'Raj Telecome' }, // Customer ko kya dikhega
-    commissionRate: { type: Number, default: 10 }, // Raj Telecome ka Platform Fee (10%)
-    createdAt: { type: Date, default: Date.now }
+app.post('/login', async (req, res) => { 
+    try { 
+        const { phone, password } = req.body; 
+        if (phone === "7739818651" && password === "Admin@123") return res.json({ success: true, message: "Welcome Boss!", userId: "000", userName: "Admin", isVIP: true, isAdmin: true }); 
+        const user = await User.findOne({ phone }); 
+        if(!user) return res.json({ success: false, message: "Number not found!" }); 
+        if(await bcrypt.compare(password, user.password)) res.json({ success: true, message: "Login Successful!", userId: user._id, userName: user.name, isVIP: user.isVIP, address: user.address }); 
+        else res.json({ success: false, message: "Wrong Password!" }); 
+    } catch (err) { res.json({ success: false }); } 
 });
-const Product = mongoose.model('Product', productSchema);
-
-const insuranceSchema = new mongoose.Schema({ name: String, phone: String, vehicleType: String, vehicleNumber: String, date: { type: Date, default: Date.now } });
-const Insurance = mongoose.model('Insurance', insuranceSchema);
-
-const orderSchema = new mongoose.Schema({ userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, customerName: String, customerPhone: String, deliveryAddress: String, items: Array, totalAmount: Number, paymentMode: { type: String, default: 'Cash on Delivery / WhatsApp' }, orderStatus: { type: String, default: 'Pending' }, date: { type: Date, default: Date.now } });
-const Order = mongoose.model('Order', orderSchema);
-
-const affiliateSchema = new mongoose.Schema({ title: String, url: String });
-const Affiliate = mongoose.model('Affiliate', affiliateSchema);
-
-const settingsSchema = new mongoose.Schema({ phone: String, heroTitle: String, marqueeText: String, ytLink: String, fbLink: String });
-const Settings = mongoose.model('Settings', settingsSchema);
-
-const jobSchema = new mongoose.Schema({ title: String, category: String, lastDate: String, fee: String, shortDesc: String });
-const Job = mongoose.model('Job', jobSchema);
-
 
 // ==========================================
-// 2. Authentication (Customers & Admins)
+// 3. SELLER APIs (B2B Partner Portal)
 // ==========================================
-app.post('/register', async (req, res) => { try { const { name, phone, password } = req.body; const existingUser = await User.findOne({ phone: phone }); if(existingUser) return res.json({ success: false, message: "Yeh number register hai!" }); const salt = await bcrypt.genSalt(10); const hashedPassword = await bcrypt.hash(password, salt); const newUser = new User({ name, phone, password: hashedPassword, isVIP: false }); await newUser.save(); res.json({ success: true, message: "Account ban gaya!" }); } catch (error) { res.json({ success: false }); } });
-app.post('/login', async (req, res) => { try { const { phone, password } = req.body; if (phone === "7739818651" && password === "Admin@123") return res.json({ success: true, message: "Welcome Boss!", userId: "000", userName: "Admin", userPhone: "7739818651", isVIP: true, isAdmin: true, address: "" }); const user = await User.findOne({ phone: phone }); if(!user) return res.json({ success: false, message: "Number register nahi hai!" }); const isMatch = await bcrypt.compare(password, user.password); if(isMatch) res.json({ success: true, message: "Login Successful!", userId: user._id, userName: user.name, userPhone: user.phone, isVIP: user.isVIP, isAdmin: false, address: user.address }); else res.json({ success: false, message: "Password galat hai!" }); } catch (error) { res.json({ success: false }); } });
-app.post('/reset-password', async (req, res) => { try { const { phone, name, newPassword } = req.body; const user = await User.findOne({ phone: phone, name: name }); if(user) { const salt = await bcrypt.genSalt(10); user.password = await bcrypt.hash(newPassword, salt); await user.save(); res.json({ success: true, message: "Password set ho gaya!" }); } else { res.json({ success: false, message: "Galat jankari!" }); } } catch (error) { res.json({ success: false }); } });
-app.post('/update-address', async (req, res) => { try { await User.findByIdAndUpdate(req.body.userId, { address: req.body.newAddress }); res.json({ success: true, message: "Address Save ho gaya!" }); } catch (error) { res.json({ success: false }); } });
-app.get('/get-users', async (req, res) => { try { const users = await User.find({}, { name: 1, phone: 1, isVIP: 1, _id: 0 }); res.json({ success: true, users }); } catch (error) { res.json({ success: false }); } });
-
-
-// ==========================================
-// 🔥 3. NAYA: Seller Authentication & APIs
-// ==========================================
-
-// Seller Register
 app.post('/seller/register', async (req, res) => {
     try {
         const { shopName, ownerName, phone, password } = req.body;
-        const existingSeller = await Seller.findOne({ phone: phone });
-        if(existingSeller) return res.json({ success: false, message: "Yeh Dukaan pehle se registered hai!" });
-        
+        if(await Seller.findOne({ phone })) return res.json({ success: false, message: "Shop already registered!" });
         const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
-
-        const newSeller = new Seller({ shopName, ownerName, phone, password: hashedPassword });
-        await newSeller.save();
-        res.json({ success: true, message: "Seller Account ban gaya! Welcome to Raj Telecome Marketplace." });
-    } catch (error) {
-        res.json({ success: false, message: "Server Error." });
-    }
+        await new Seller({ shopName, ownerName, phone, password: await bcrypt.hash(password, salt) }).save();
+        res.json({ success: true, message: "Seller Account Created!" });
+    } catch (err) { res.json({ success: false, message: "Error" }); }
 });
 
-// Seller Login
-app.post('/seller/login', async (req, res) => {
-    try {
-        const { phone, password } = req.body;
-        const seller = await Seller.findOne({ phone: phone });
-        if(!seller) return res.json({ success: false, message: "Yeh number Seller list me nahi hai!" });
-
-        const isMatch = await bcrypt.compare(password, seller.password);
-        if(isMatch) {
-            res.json({ success: true, message: "Seller Login Successful!", shopName: seller.shopName, sellerId: seller._id });
-        } else {
-            res.json({ success: false, message: "Password galat hai!" });
-        }
-    } catch (error) {
-        res.json({ success: false, message: "Server error." });
-    }
-});
-
-
 // ==========================================
-// 4. Products, Orders & Links
+// 4. SUPER APP FEATURES (Products, Jobs, Orders)
 // ==========================================
-
-// Product add karna (Ab Seller bhi add kar sakta hai aur Admin bhi)
 app.post('/add-product', async (req, res) => { 
     try { 
-        // Agar sellerId nahi aayi, toh iska matlab 'Raj Telecome (Admin)' add kar raha hai
-        const { name, price, image, whatsappMsg, sellerId, shopName } = req.body;
-        const newProduct = new Product({
-            name, price, image, whatsappMsg,
-            sellerId: sellerId || 'admin',
-            shopName: shopName || 'Raj Telecome',
-            commissionRate: 10
-        });
-        await newProduct.save(); 
-        res.json({ success: true, message: "Product Live ho gaya!" }); 
-    } catch (error) { 
-        res.json({ success: false }); 
-    } 
+        await new Product(req.body).save(); 
+        res.json({ success: true, message: "Product Live!" }); 
+    } catch (err) { res.json({ success: false }); } 
 });
 
-app.get('/get-products', async (req, res) => { try { const products = await Product.find({}).sort({ createdAt: -1 }); res.json({ success: true, products }); } catch (error) { res.json({ success: false }); } });
-app.post('/delete-product', async (req, res) => { try { await Product.findByIdAndDelete(req.body.id); res.json({ success: true, message: "Delete ho gaya!" }); } catch (error) { res.json({ success: false }); } });
-app.post('/place-order', async (req, res) => { try { const newOrder = new Order({...req.body, paymentMode: 'Cash on Delivery / WhatsApp', orderStatus: 'Pending'}); await newOrder.save(); res.json({ success: true, message: "Order confirm ho gaya!" }); } catch (error) { res.json({ success: false }); } });
-app.post('/my-orders', async (req, res) => { try { const orders = await Order.find({ userId: req.body.userId }).sort({ date: -1 }); res.json({ success: true, orders }); } catch (error) { res.json({ success: false }); } });
-app.get('/all-orders-admin', async (req, res) => { try { const orders = await Order.find().sort({ date: -1 }); res.json({ success: true, orders }); } catch (error) { res.json({ success: false }); } });
-app.post('/update-order-status', async (req, res) => { try { await Order.findByIdAndUpdate(req.body.orderId, { orderStatus: req.body.newStatus }); res.json({ success: true, message: "Status update ho gaya!" }); } catch (error) { res.json({ success: false }); } });
-app.post('/add-affiliate', async (req, res) => { try { await new Affiliate(req.body).save(); res.json({success: true, message: "Link add ho gaya!"}); } catch (err) { res.json({success: false}); } });
-app.get('/get-affiliates', async (req, res) => { try { const links = await Affiliate.find(); res.json({success: true, links}); } catch (err) { res.json({success: false}); } });
-app.post('/delete-affiliate', async (req, res) => { try { await Affiliate.findByIdAndDelete(req.body.id); res.json({success: true, message: "Link delete ho gaya!"}); } catch (err) { res.json({success: false}); } });
-app.post('/submit-insurance', async (req, res) => { try { await new Insurance(req.body).save(); res.json({ success: true, message: "Jankari mil gayi!" }); } catch (error) { res.json({ success: false }); } });
-app.get('/get-insurance-leads', async (req, res) => { try { const leads = await Insurance.find().sort({ date: -1 }); res.json({ success: true, leads }); } catch (error) { res.json({ success: false }); } });
-
-
-// ==========================================
-// 5. CMS Settings & Jobs API
-// ==========================================
-app.get('/get-settings', async (req, res) => {
-    try {
-        let settings = await Settings.findOne();
-        if(!settings) { 
-            settings = await new Settings({ phone: "7739818651", heroTitle: "Digital Services At Your Fingertips", marqueeText: "🌟 Join Our Family of 9,100+ Happy Customers!", ytLink: "https://www.youtube.com/c/TextSuport", fbLink: "https://facebook.com/textsuport" }).save();
-        }
-        res.json({ success: true, settings });
-    } catch (err) { res.json({ success: false }); }
+app.get('/get-products', async (req, res) => { 
+    try { res.json({ success: true, products: await Product.find().sort({ createdAt: -1 }) }); } 
+    catch (err) { res.json({ success: false }); } 
 });
-app.post('/update-settings', async (req, res) => { try { await Settings.findOneAndUpdate({}, req.body, { upsert: true }); res.json({ success: true, message: "Website Update Ho Gayi!" }); } catch (err) { res.json({ success: false }); } });
-// 📝 Naya Form Add karna + Auto Notification bhejna
+
+app.post('/place-order', async (req, res) => { 
+    try { 
+        await new Order(req.body).save(); 
+        res.json({ success: true, message: "Order Placed!" }); 
+    } catch (err) { res.json({ success: false }); } 
+});
+
+// 🔥 Add Govt Job & Trigger Automatic Firebase Notification
 app.post('/add-job', async (req, res) => { 
     try { 
         await new Job(req.body).save(); 
         
-        // 🔥 AUTO NOTIFICATION MAGIC
-        const message = {
-            notification: {
-                title: "🚨 Naya Sarkari Form Aa Gaya!",
-                body: `${req.body.title} - Raj Telecome par aakar aaj hi bharwayein!`
-            },
-            topic: "all_users" // Ye message un sabhi ko jayega jinke paas app hai
-        };
-        
-        // Firebase ko order dena ki sabko bhej do
-        admin.messaging().send(message)
-            .then(response => console.log("✅ Notification Sent:", response))
-            .catch(error => console.log("❌ Notification Error:", error));
+        // AUTO NOTIFICATION TRIGGER
+        if(admin.apps.length > 0) {
+            const message = {
+                notification: { title: "🚨 New Form Update!", body: `${req.body.title} - Apply now on Raj Telecome App.` },
+                topic: "all_users"
+            };
+            admin.messaging().send(message).catch(err => console.log("Notif Error:", err));
+        }
 
-        res.json({ success: true, message: "Job Live ho gaya aur sabko Notification chala gaya!" }); 
-    } catch (err) { 
-        res.json({ success: false }); 
-    } 
+        res.json({ success: true, message: "Job Live & Notification Sent!" }); 
+    } catch (err) { res.json({ success: false }); } 
 });
-app.get('/get-jobs', async (req, res) => { try { const jobs = await Job.find().sort({_id: -1}); res.json({ success: true, jobs }); } catch (err) { res.json({ success: false }); } });
-app.post('/delete-job', async (req, res) => { try { await Job.findByIdAndDelete(req.body.id); res.json({ success: true, message: "Delete ho gaya" }); } catch (err) { res.json({ success: false }); } });
 
-app.get('/', (req, res) => { res.send("🚀 Raj Telecome B2B Marketplace Backend is Running Perfectly!"); });
+app.get('/get-jobs', async (req, res) => { 
+    try { res.json({ success: true, jobs: await Job.find().sort({_id: -1}) }); } 
+    catch (err) { res.json({ success: false }); } 
+});
 
-app.listen(process.env.PORT || 3000, () => { console.log(`🚀 Server Running! Ready for 1 Crore Target!`); });
+// ==========================================
+// 🌍 SERVER START
+// ==========================================
+app.get('/', (req, res) => { res.send("🚀 Raj Telecome Super-App Backend is LIVE!"); });
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => { console.log(`🚀 Master Server is running on port ${PORT}`); });
